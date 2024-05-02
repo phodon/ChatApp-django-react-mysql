@@ -35,7 +35,7 @@ function Signup() {
             formDataToSend.append('phone', formData.phone);
             formDataToSend.append('avatar', formData.avatar); 
 
-            const response = await axios.post('http://127.0.0.1:8000/api/register/', formDataToSend, {
+            const response = await axios.post('/api/register/', formDataToSend, {
                 headers: {
                     'Content-Type': 'multipart/form-data'  
                 }

@@ -2,6 +2,8 @@
 from pathlib import Path
 from datetime import timedelta
 import os
+
+from .loger import AddLogIdFilter
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -143,7 +145,7 @@ SIMPLE_JWT = {
 
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:3000',
-    'http://127.0.0.1:8000'
+    'http://127.0.0.1:3000'
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -151,8 +153,37 @@ CORS_ALLOW_CREDENTIALS = True
 MEDIA_URL = '/media/'  
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media/')  
 
-
-
-
-
-
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+            "filters": ["add_log_id"],  # Thay vì chuỗi "add_log_id", sử dụng đối tượng AddLogIdFilter
+        },
+        "file": {
+            "class": "logging.FileHandler",
+            "filename": "general.log",
+            "formatter": "verbose",
+            "filters": ["add_log_id"],  # Thay vì chuỗi "add_log_id", sử dụng đối tượng AddLogIdFilter
+        },
+    },
+    "loggers": {
+        "": {
+            "handlers": ["console", "file"],
+            "level": os.environ.get("DJANGO_LOG_LEVEL", "INFO"),
+        }
+    },
+    "formatters": {
+        "verbose": {
+            "format": "[{asctime}] {levelname} - [ID: {log_id}] - {name} - {message}",
+            "style": "{",
+        }
+    },
+    "filters": {
+        "add_log_id": {
+            "()": AddLogIdFilter,  # Sử dụng đối tượng AddLogIdFilter
+        },
+    },
+}

@@ -14,5 +14,7 @@ urlpatterns = [
     path('add_member/', views.addMember, name='addMember'),
     path('create_room/', views.createRoom, name = 'createRoom'),
     path('user_info/', views.userInfo, name='userInfo'),
-    path('user_update/', views.userUpdate, name='userUpdate')
+    path('user_update/', views.userUpdate, name='userUpdate'),
+    path('block/',views.block, name = 'block'),
+    path('unblock/',views.unblock, name = 'unblock')
 ]

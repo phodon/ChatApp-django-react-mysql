@@ -34,6 +34,36 @@ function Home() {
         setShowRoomInfo(!showRoomInfo);
     };
 
+    const handleBlockUser = (userId, isBlock) => {
+        if (isBlock === 0) {
+            axios.post(`/api/block/`, { blocked_user: userId }, {
+                headers: {
+                    Authorization: `Bearer ${localStorage.getItem('access_token')}`
+                }
+            })
+                .then(response => {
+                    console.log(response.data.message);
+                    fetchResultSearch()
+                })
+                .catch(error => {
+                    console.error('Error adding user:', error);
+                });
+        } else {
+            axios.post(`/api/unblock/`, { unblocked_user: userId }, {
+                headers: {
+                    Authorization: `Bearer ${localStorage.getItem('access_token')}`
+                }
+            })
+                .then(response => {
+                    console.log(response.data.message);
+                    fetchResultSearch()
+                })
+                .catch(error => {
+                    console.error('Error adding user:', error);
+                });
+        }
+    };
+
     useEffect(() => {
         setUsername(localStorage.getItem('username'));
         setAvatar(localStorage.getItem('avatar'));
@@ -103,14 +133,14 @@ function Home() {
     };
 
     const handleSendMessage = async () => {
-        if (!message.trim()) return; 
+        if (!message.trim()) return;
 
         try {
             const response = await axios.post(
                 '/api/chat/',
                 {
                     room_id: selectedChatId,
-                    content: message 
+                    content: message
                 },
                 {
                     headers: {
@@ -119,6 +149,7 @@ function Home() {
                 }
             );
             fetchMessages(selectedChatId);
+            console.log('sao vay nhi');
         } catch (error) {
             console.error('Error sending message:', error.response.data);
         }
@@ -131,7 +162,7 @@ function Home() {
         }
     };
 
-    const handleSearch = async () => {
+    const fetchResultSearch = async () =>{
         try {
             const response = await axios.get(`/api/search_user/?search=${searchQuery}`, {
                 headers: {
@@ -142,6 +173,10 @@ function Home() {
         } catch (error) {
             console.error('Error searching user:', error);
         }
+    }
+
+    const handleSearch = async () => {
+        fetchResultSearch()
     };
 
     const handleChangeSearch = (e) => {
@@ -222,10 +257,10 @@ function Home() {
                 <div className="col-lg-12">
                     <div className="card chat-app">
                         <div id="plist" className="people-list">
-                            <SearchBar searchQuery={searchQuery} handleChangeSearch={handleChangeSearch} handleClick={handleClick} handleKeyPress={handleKeyPress}/>
-                            <ChatList chatList={chatList} handleChooseRoom={handleChooseRoom}/>
-                            <CreateRoomForm roomName={roomName} handleRoomNameChange={handleRoomNameChange} handleCreateRoom={handleCreateRoom}/>
-                            <SearchResults searchResults={searchResults} handleAddUser={handleAddUser}/>
+                            <SearchBar searchQuery={searchQuery} handleChangeSearch={handleChangeSearch} handleClick={handleClick} handleKeyPress={handleKeyPress} />
+                            <ChatList chatList={chatList} handleChooseRoom={handleChooseRoom} />
+                            <CreateRoomForm roomName={roomName} handleRoomNameChange={handleRoomNameChange} handleCreateRoom={handleCreateRoom} />
+                            <SearchResults searchResults={searchResults} handleAddUser={handleAddUser} handleBlockUser={handleBlockUser} />
                         </div>
 
                         <div className="chat">
@@ -243,7 +278,6 @@ function Home() {
                             <MessageInput
                                 message={message}
                                 handleMessageChange={handleMessageChange}
-                                handleSendMessage={handleSendMessage}
                                 handleMessageKeyPress={handleMessageKeyPress}
                             />
                         </div>

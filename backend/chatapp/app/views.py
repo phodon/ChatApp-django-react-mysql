@@ -2,41 +2,44 @@ from rest_framework.decorators import api_view
 from django.contrib.auth import authenticate
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import UserProfileSerializer, MessagesSerializer, RoomsSerializer, RoomParticipantsSerializer, ReceiversSerializer
-from .models import UserProfile, Messages, RoomParticipants, Receivers, Rooms
+from .serializers import UserProfileSerializer, MessagesSerializer, RoomsSerializer, RoomParticipantsSerializer, ReceiversSerializer, BlockedUserSerializer
+from .models import UserProfile, Messages, RoomParticipants, Receivers, Rooms, BlockedUser
 from rest_framework_simplejwt.tokens import RefreshToken
 from app.middlewares import UserMiddleware
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Q
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # Create your views here.
 @api_view(['POST'])
 def register(request):
-    username = request.data.get('username')
-    password = request.data.get('password')
-    email = request.data.get('email')
-    confirm_password = request.data.get('confirm_password')
+    data = request.data
 
-    if not username or not password or not confirm_password:
-        return Response({'error':'Username, Email, Password, Confirm_password is required'}, status=status.HTTP_400_BAD_REQUEST)
-    if confirm_password != password:
-        return Response({'error':'Password not like Confirm_password'}, status=status.HTTP_400_BAD_REQUEST)
-    if 'avatar' not in request.data: 
-        return Response({'error':'Avatar is required'}, status=status.HTTP_400_BAD_REQUEST)
+    required_fields = ['username', 'password', 'confirm_password', 'email', 'avatar']
+    for field in required_fields:
+        if field not in data or not data[field]:
+            return Response({'error': f'{field.capitalize()} is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-    if UserProfile.objects.filter(email=email).exists():
-        return Response({'error':'Email already registered'}, status=status.HTTP_400_BAD_REQUEST)
+    if data['confirm_password'] != data['password']:
+        return Response({'error': 'Password does not match Confirm_password'}, status=status.HTTP_400_BAD_REQUEST)
 
-    if UserProfile.objects.filter(username=username).exists():
-        return Response({'error':'Username already registered'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    serializer = UserProfileSerializer(data=request.data)  # Truyền request.data vào Serializer
+    if UserProfile.objects.filter(email=data['email']).exists():
+        return Response({'error': 'Email already registered'}, status=status.HTTP_400_BAD_REQUEST)
 
+    if UserProfile.objects.filter(username=data['username']).exists():
+        return Response({'error': 'Username already registered'}, status=status.HTTP_400_BAD_REQUEST)
+
+    serializer = UserProfileSerializer(data=data)
     if serializer.is_valid():
         serializer.save()
-        return Response({'message':'Register is success', 'data':serializer.data}, status=status.HTTP_201_CREATED)
+        logger.info('Register Successfully')
+        return Response({'message': 'Register is success', 'data': serializer.data}, status=status.HTTP_201_CREATED)
 
-    return Response({'message':'Information is invalid', 'data':serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+    return Response({'message': 'Information is invalid', 'data': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
 
 @api_view(['POST'])
 def loginUser(request):
@@ -54,9 +57,9 @@ def loginUser(request):
 
     user_data = {
         'username': user.username,
-        'avatar': user.avatar.url if user.avatar else None  # Lấy đường dẫn ảnh đại diện nếu có
+        'avatar': user.avatar.url if user.avatar else None  
     }
-    print(user_data)
+    logger.info('Login Successfully')
 
     return Response({'refresh_token': refresh,'access_token': access, 'user_data': user_data})
 
@@ -69,13 +72,13 @@ def chat(request):
     try:
         room = Rooms.objects.get(id=room_id)
     except Rooms.DoesNotExist:
-        return Response({'error':'Room not found'}, status = status.HTTP_401_UNAUTHORIZED)
+        return Response({'error':'Room not found'}, status = status.HTTP_404_NOT_FOUND)
     
     try: 
         user = UserProfile.objects.get(id = request.user_id)
     except UserProfile.DoesNotExist:
-        return Response({'error':'User not found'}, status = status.HTTP_401_UNAUTHORIZED)
-
+        return Response({'error':'User not found'}, status = status.HTTP_404_NOT_FOUND)
+    
     request.data['sender'] = user.id
     request.data['room'] = room.id
     request.data['status'] = 1
@@ -85,8 +88,9 @@ def chat(request):
         list_id_receiver = list(RoomParticipants.objects.filter(room_id = room.id).values_list('user_id', flat=True))
 
         if len(list_id_receiver)==1:
-            return Response({'error': 'phong chua co ai'}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({'error': 'phong chua co ai'}, status=status.HTTP_404_NOT_FOUND)
         message = mess_serializer.save()
+        logger.debug('Sent Message Successfully')
         
         for i in list_id_receiver:
             if i != user.id:
@@ -101,20 +105,17 @@ def chat(request):
     else:
         return Response(mess_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-@csrf_exempt
+
 @UserMiddleware
 @api_view(['GET'])
 def getListChat(request):
     try: 
         user = UserProfile.objects.get(id=request.user_id)
     except UserProfile.DoesNotExist:
-        return Response({'error': 'User not found'}, status=status.HTTP_401_UNAUTHORIZED)
+        return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
     
-    # Lấy danh sách các phòng mà người dùng đã tham gia
     user_rooms = RoomParticipants.objects.filter(user=user.id)
-    print(user_rooms)
     
-    # Chuyển đổi danh sách các phòng thành một danh sách dictionary
     rooms_data = []
     for room in user_rooms:
         try:
@@ -123,53 +124,81 @@ def getListChat(request):
             rooms_data.append(serializer.data)
         except Rooms.DoesNotExist:
             pass
-    
+    logger.debug('API getListChat')
     return Response(rooms_data)
 
-@csrf_exempt
+
 @UserMiddleware
 @api_view(['GET'])
 def searchUser(request):
-    search_query = request.query_params.get('search', '')
-    if search_query == '':
-        return Response({"message":'khong co j'})
-    users = UserProfile.objects.filter(Q(username__icontains=search_query) | Q(email__icontains=search_query))
-    serializer = UserProfileSerializer(users, many=True)
-    return Response(serializer.data)
+    try:
+        user = UserProfile.objects.get(id=request.user_id)
 
-@csrf_exempt
+        blocked_users = BlockedUser.objects.filter(user=user.id).values_list('blocked_user', flat=True)
+
+        search_query = request.query_params.get('search', '')
+
+        if not search_query:
+            return Response({"message": 'No search data available'})
+        
+        users = UserProfile.objects.filter(Q(username__icontains=search_query) | Q(email__icontains=search_query))
+
+        data = []
+
+        for user in users:
+            tmp = {
+                'id': user.id,
+                'email': user.email,
+                'phone': user.phone,
+                'isBlock': 1 if user.id in blocked_users else 0
+            }
+            data.append(tmp)
+
+        logger.info('API searchUser')
+
+        return Response(data)
+
+    except UserProfile.DoesNotExist:
+        return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
 @UserMiddleware
 @api_view(['GET'])
 def getMessage(request,id):
     list_message = Messages.objects.filter(room_id = id).order_by('created_at')
-    serializer = MessagesSerializer(list_message,many = True)
-    return Response(serializer.data)
+    serializers = MessagesSerializer(list_message, context={'user_id': request.user_id}, many = True )
+    logger.info('API getMessage')
+    return Response(serializers.data)
 
-@csrf_exempt
+
 @UserMiddleware
 @api_view(['GET'])
 def getRoomInfo(request, id):
+    if id == 'null':
+        return Response("ID is null", status=status.HTTP_400_BAD_REQUEST)
+    
     try:
         room = Rooms.objects.get(id=id)
-        serializer = RoomsSerializer(room, many=False)
-        list_id_member = list(RoomParticipants.objects.filter(room_id=room.id).values_list('user_id', flat=True))
-        list_member = [] 
-        for user_id in list_id_member:
-            try:
-                tmp = UserProfile.objects.get(id=user_id)
-                user_data = {
-                    'id': tmp.id,
-                    'email': tmp.email,
-                    'username': tmp.username
-                }
-                list_member.append(user_data)
-            except UserProfile.DoesNotExist:
-                pass
-        data = serializer.data
-        data['list_member'] = list_member
-        return Response(data)
     except Rooms.DoesNotExist:
-        return Response("id phong k ton tai")
+        return Response("Room ID does not exist", status=status.HTTP_404_NOT_FOUND)
+    
+    serializer = RoomsSerializer(room)
+    list_member = []
+    room_participants = RoomParticipants.objects.filter(room_id=room.id).values_list('user_id', flat=True)
+    users = UserProfile.objects.filter(id__in=room_participants)
+
+    for user in users:
+        user_data = {
+            'id': user.id,
+            'email': user.email,
+            'username': user.username
+        }
+        list_member.append(user_data)
+
+    data = serializer.data
+    data['list_member'] = list_member
+    logger.info('API getRoomInfo')
+    return Response(data)
     
 @csrf_exempt
 @UserMiddleware
@@ -181,26 +210,27 @@ def removeMember(request):
         
         room = Rooms.objects.get(id=room_id)
         if room.admin_id != request.user_id:
-            return Response({'message': 'Bạn không phải là admin'})
+            logger.info('API removeMember, You is not Admin')
+            return Response({'message': 'You is not admin'})
         
         list_member = RoomParticipants.objects.filter(room_id=room.id).values_list('user_id', flat=True)
         if member_id not in list_member or member_id == request.user_id:
-            return Response({'message': 'Không có trong nhóm hoặc bạn là admin'})
+            return Response({'message': 'Not in the group or you are an admin'})
 
         RoomParticipants.objects.filter(room_id=room_id, user_id=member_id).delete()
-        return Response({'message': 'Xóa thành công'})
+        logger.info('API removeMemBer')
+        return Response({'message': 'Delete sucessfully'})
     
     except (ValueError, Rooms.DoesNotExist):
-        return Response({'message': 'ID phòng không hợp lệ hoặc không tồn tại'}, status=400)
+        return Response({'message': 'Room is not found'}, status=400)
     
     except Exception as e:
-        return Response({'message': f'Lỗi: {str(e)}'}, status=400)
+        return Response({'message': f'Error: {str(e)}'}, status=400)
     
 @csrf_exempt
 @UserMiddleware
 @api_view(['POST'])
 def addMember(request):
-    print("ok")
     try:
         member_id = int(request.query_params.get('member', ''))
         room_id = int(request.query_params.get('room', ''))
@@ -210,20 +240,19 @@ def addMember(request):
         
         list_member = RoomParticipants.objects.filter(room_id=room.id).values_list('user_id', flat=True)
         if member_id in list_member or request.user_id not in list_member:
-            return Response({'message': 'bạn không ở trong nhóm này hoặc người bạn thêm đã có trong nhóm'})
+            return Response({'message': 'You are not in this group or the person you added is already in the group'})
 
-        # Tạo một serializer với dữ liệu đầu vào
         serializer = RoomParticipantsSerializer(data={'room': room.id, 'user': member.id})
         if serializer.is_valid():
             serializer.save()
-            print("ok123")
-            return Response({'message': 'Thêm thành công'})
+            logger.info('API addMember')
+            return Response({'message': 'Add successfully'})
             
         else:
             return Response(serializer.errors, status=400)
 
     except (ValueError, Rooms.DoesNotExist, UserProfile.DoesNotExist):
-        return Response({'message': 'ID phòng không hợp lệ hoặc không tồn tại'}, status=400)
+        return Response({'message': 'Room not found'}, status=400)
     
     except Exception as e:
         return Response({'message': f'Lỗi: {str(e)}'}, status=400)
@@ -244,7 +273,6 @@ def createRoom(request):
 
     list_room = RoomParticipants.objects.filter(user=user.id)
     list_room_names = Rooms.objects.filter(id__in=list_room.values('room_id')).values_list('room_name', flat=True)
-    print(list_room_names)
 
     if room_name in list_room_names:
         return Response({'error': 'Roomname already exists'}, status=status.HTTP_401_UNAUTHORIZED)
@@ -264,18 +292,20 @@ def createRoom(request):
         if roomparticipants_serializer.is_valid():
             roomparticipants_serializer.save()
 
+        logger.info('API createRoom')
         return Response(room_serializer.data)
     else:
         return Response({'error': 'Error'}, status=status.HTTP_401_UNAUTHORIZED)
 
 
-@csrf_exempt
+
 @UserMiddleware
 @api_view(['GET'])
 def userInfo(request):
     try:
         user = UserProfile.objects.get(id=request.user_id)
         serializer = UserProfileSerializer(user)
+        logger.info('API userInfo')
         return Response(serializer.data)
     except UserProfile.DoesNotExist:
         return Response({'error': 'User not found'}, status=status.HTTP_401_UNAUTHORIZED)
@@ -289,6 +319,7 @@ def userUpdate(request):
         address = request.data.get('address')
         phone = request.data.get('phone')
         avatar = request.data.get('avatar')
+        logger.info(avatar)
         if address:
             user.address = address
         if phone:
@@ -297,9 +328,60 @@ def userUpdate(request):
             user.avatar = avatar
         user.save()
         serializer = UserProfileSerializer(user)
+        logger.info('API userUpdate')
         return Response(serializer.data)
     except UserProfile.DoesNotExist:
-        return Response({'error': 'User not found'}, status=status.HTTP_401_UNAUTHORIZED)
+        return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+@csrf_exempt
+@UserMiddleware
+@api_view(['POST'])
+def block(request):
+    try:
+        user = UserProfile.objects.get(id = request.user_id)
+        blocked_user = UserProfile.objects.get(id = request.data.get('blocked_user'))
+
+        if user.id != blocked_user.id:
+            data = {
+                'user': user.id,
+                'blocked_user': blocked_user.id
+            }
+            check = BlockedUser.objects.filter(user = user.id, blocked_user = blocked_user.id)
+            if check:
+                return Response({'message':'blocked before'}, status=status.HTTP_200_OK)
+            else:
+                serializer = BlockedUserSerializer(data=data)
+                if serializer.is_valid():
+                    serializer.save()
+                    logger.info('API block')
+                    return Response({'message':'block successful'})
+                else:
+                    return Response({'error':'block fail'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            return Response({'error':'can not block yourself'}, status=status.HTTP_400_BAD_REQUEST)
+
+    except UserProfile.DoesNotExist:
+        return Response({'error': 'User not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+@csrf_exempt
+@UserMiddleware
+@api_view(['POST'])
+def unblock(request):
+    try:
+        user = UserProfile.objects.get(id = request.user_id)
+        unblocked_user = UserProfile.objects.get(id = request.data.get('unblocked_user'))
+
+        check = BlockedUser.objects.filter(user = user.id, blocked_user = unblocked_user.id)
+        if check:
+            check.delete()
+            logger.info('API unblock')
+            return Response({'message':'unblock sucess'}, status=status.HTTP_200_OK)
+        else:
+            return Response({'error':'have not block before'}, status=status.HTTP_400_BAD_REQUEST)
+        
+    except UserProfile.DoesNotExist:
+        return Response({'error': 'User not found'}, status=status.HTTP_400_BAD_REQUEST)
+
     
     
    

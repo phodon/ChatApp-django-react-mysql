@@ -133,7 +133,8 @@ body{
 
 .chat .chat-history .message-data-time {
     color: #434651;
-    padding-left: 6px
+    padding-left: 6px;
+    font-size: x-small;
 }
 
 .chat .chat-history .message {
@@ -280,9 +281,16 @@ body{
 .own-message {
     text-align: right;
 }
+.text-own-message{
+    text-align: justify;
+    padding-top: 1rem!important;
+    padding-bottom: 1rem!important;
+}
 
 .other-message {
     text-align: left;
+    padding-top: 1rem!important;
+    padding-bottom: 1rem!important;
 }
 
 .message {
@@ -292,6 +300,7 @@ body{
 
 .message-content {
     flex-grow: 1;
+    
 }
 
 .message-data {
@@ -392,3 +401,5 @@ body{
     align-items: center;
     margin-right: 10px;
 }
+
+

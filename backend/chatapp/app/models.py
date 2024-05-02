@@ -44,6 +44,10 @@ class UserProfile(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.email
+    
+class BlockedUser(models.Model):
+    user = models.ForeignKey(UserProfile,on_delete=models.CASCADE,related_name='block_user_user_1')
+    blocked_user = models.ForeignKey(UserProfile, on_delete=models.CASCADE,related_name='block_user_user_2')
 
 class Rooms(models.Model):
     isGroupChat = models.IntegerField(default=0)
